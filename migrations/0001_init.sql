@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL DEFAULT 0, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS auth_attempts (ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, blocked_until INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS attachments (bill_id TEXT PRIMARY KEY, name TEXT NOT NULL, mime TEXT NOT NULL, body BLOB NOT NULL);
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions (expires_at);

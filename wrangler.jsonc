@@ -1,0 +1,7 @@
+{
+  "name": "staff-management",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-15",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{"binding":"DB","database_name":"nunes-staff-db","database_id":"0cca4f77-83ed-4d04-a2f4-e3a6c9c6b9e4","migrations_dir":"migrations"}]
+}
