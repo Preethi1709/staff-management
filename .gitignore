@@ -1,0 +1,28 @@
+# Local database and company records
+data/
+backups/
+uploads/
+
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.bak
+
+# Windows files
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.vscode/
+.idea/
