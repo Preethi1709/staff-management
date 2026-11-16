@@ -14,7 +14,7 @@ const fail=(status,message)=>json({error:message},status);
 const bytesToHex=x=>Array.from(new Uint8Array(x),x=>x.toString(16).padStart(2,'0')).join('');
 const hexToBytes=x=>new Uint8Array(x.match(/.{2}/g).map(v=>parseInt(v,16)));
 async function sha256(s){return bytesToHex(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)));}
-async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);return bytesToHex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:hexToBytes(salt),iterations:210000},key,256));}
+async function passwordHash(password,salt){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);return bytesToHex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:hexToBytes(salt),iterations:100000},key,256));}
 function equalHash(a,b){if(!a||!b||a.length!==b.length)return false;let v=0;for(let i=0;i<a.length;i++)v|=a.charCodeAt(i)^b.charCodeAt(i);return v===0;}
 function getCookie(req){return (req.headers.get('cookie')||'').split(';').map(v=>v.trim()).find(v=>v.startsWith('nunes_session='))?.slice(14)||'';}
 function setCookie(token){return `nunes_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`;}
