@@ -41,26 +41,34 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .btn.danger:hover{background:#fff5f6}
 .error{margin-top:14px;border:1px solid #facdd4;background:#fff0f2;color:#ad2c3d;padding:12px;border-radius:9px}
 .app{display:flex;min-height:100vh}
-.sidebar{width:248px;min-width:248px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:28px 16px 18px;position:sticky;top:0;height:100vh}
-.brand{display:flex;align-items:center;gap:11px;padding:0 12px}
-.brand-symbol{width:40px;height:40px;font-size:22px;letter-spacing:-2px}
-.brand-symbol span{font-size:7px;margin-top:7px}
-.brand strong{display:block;font-size:20px;font-weight:900;letter-spacing:1.4px}
-.brand small{display:block;font-size:8px;font-weight:800;letter-spacing:2.3px;color:#8e9db3}
-.workspace-tag{margin:32px 9px 26px;padding:10px;background:#f4f8fe;border-radius:8px;font-weight:700;color:#6e90c2;letter-spacing:1px;font-size:9px}
-.workspace-dot{display:inline-block;width:7px;height:7px;background:#36c39c;border-radius:50%;margin-right:5px}
-.nav-label{font-size:10px;font-weight:900;color:#9eabc0;letter-spacing:1.3px;margin:0 13px 13px}
-.nav-label.nested{margin:25px 13px 12px}
-.nav-btn{display:flex;align-items:center;text-align:left;gap:13px;padding:12px 13px;border:0;border-radius:9px;background:transparent;color:#6f7f97;font-weight:600;width:100%;margin-bottom:3px;transition:background-color .15s ease,color .15s ease}
-.nav-btn.active{background:#edf4ff;color:#2460db;font-weight:800}
-.nav-btn:hover:not(.active){background:#f7faff}
-.nav-ico{width:19px;font-size:21px;text-align:center;font-weight:400}
-.sidebar-bottom{margin-top:auto}
-.help-card{background:#edf5ff;border:1px solid #e1eeff;padding:17px;border-radius:12px}
-.help-card strong{font-size:12px}
-.help-card p{font-size:12px;color:#8195b2;line-height:1.6}
-.help-card span{color:#319e88;font-size:11px;font-weight:700}
-.logout{padding:20px 12px 0;background:none;border:0;color:#8c9bb1;font-weight:700;display:flex;gap:10px}
+.sidebar{width:256px;min-width:256px;background:#fff;border-right:1px solid #e8eef6;display:flex;flex-direction:column;padding:20px 14px 16px;position:sticky;top:0;height:100vh;max-height:100vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent;box-sizing:border-box;z-index:10}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+.brand{display:flex;align-items:center;gap:12px;padding:4px 8px 12px;text-decoration:none}
+.brand-symbol{width:38px;height:38px;min-width:38px;background:linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%);color:#fff;font-weight:900;display:flex;align-items:center;justify-content:center;border-radius:11px;letter-spacing:-2px;font-size:21px;box-shadow:0 4px 10px rgba(37,99,235,.22)}
+.brand-symbol span{font-size:8px;letter-spacing:0;align-self:flex-start;margin-top:6px}
+.brand strong{display:block;font-size:19px;font-weight:900;letter-spacing:1.2px;color:#0f172a;line-height:1.1}
+.brand small{display:block;font-size:8px;font-weight:800;letter-spacing:2.2px;color:#64748b;margin-top:2px}
+.workspace-tag{margin:4px 4px 14px;padding:7px 11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;font-weight:700;color:#475569;letter-spacing:.06em;font-size:9.5px;display:flex;align-items:center;gap:6px}
+.workspace-dot{display:inline-block;width:6px;height:6px;background:#10b981;border-radius:50%;box-shadow:0 0 0 2px rgba(16,185,129,.2);flex-shrink:0}
+.nav-label{font-size:10px;font-weight:800;color:#8a9bb2;letter-spacing:.08em;margin:14px 10px 6px;text-transform:uppercase;user-select:none}
+.nav-label.nested{margin:18px 10px 6px;padding-top:6px;border-top:1px dashed #edf2f7}
+#nav{display:flex;flex-direction:column;gap:2px}
+.nav-btn{display:flex;align-items:center;text-align:left;gap:11px;height:38px;padding:0 12px;border:1px solid transparent;border-radius:8px;background:transparent;color:#475569;font-weight:550;font-size:13px;width:100%;margin-bottom:1px;cursor:pointer;transition:all .15s cubic-bezier(.16,1,.3,1);box-sizing:border-box}
+.nav-ico{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:15px;text-align:center;font-weight:400;color:#64748b;flex-shrink:0;transition:color .15s ease,transform .15s ease}
+.nav-btn:hover:not(.active){background:#f8fafc;color:#0f172a;border-color:#f1f5f9;transform:translateX(2px)}
+.nav-btn:hover:not(.active) .nav-ico{color:#2563eb;transform:scale(1.08)}
+.nav-btn.active{background:#eff6ff;color:#1d4ed8;font-weight:700;border-color:#dbeafe;box-shadow:0 1px 3px rgba(37,99,235,.08);position:relative}
+.nav-btn.active::before{content:'';position:absolute;left:-2px;top:6px;bottom:6px;width:3.5px;background:#2563eb;border-radius:0 3px 3px 0}
+.nav-btn.active .nav-ico{color:#2563eb;font-weight:700}
+.sidebar-bottom{margin-top:auto;padding-top:14px;display:flex;flex-direction:column;gap:8px;flex-shrink:0}
+.help-card{background:linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%);border:1px solid #dbeafe;padding:12px 14px;border-radius:10px}
+.help-card strong{font-size:11.5px;font-weight:750;color:#1e3a8a;display:block}
+.help-card p{font-size:11px;color:#475569;line-height:1.45;margin:4px 0 6px}
+.help-card span{color:#059669;font-size:10.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px}
+.logout{padding:8px 12px;background:transparent;border:1px solid transparent;border-radius:8px;color:#64748b;font-weight:600;font-size:12.5px;display:flex;align-items:center;gap:9px;cursor:pointer;transition:all .15s ease;margin-top:2px}
+.logout:hover{background:#fef2f2;color:#dc2626;border-color:#fee2e2}
 .main-area{flex:1;min-width:0}
 .topbar{height:76px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 40px;border-bottom:1px solid var(--line)}
 .crumb{font-size:11px;letter-spacing:.8px;color:#a1aec0;font-weight:700}
