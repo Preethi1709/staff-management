@@ -1,80 +1,1003 @@
 'use strict';
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const types={staff:{title:'Staff Directory',sub:'Keep your people records accurate and up to date.',singular:'Staff Member',icon:'♙'},company_mobile:{title:'Company Mobiles',sub:'Track office mobile phones, SIMs and assignments.',singular:'Company Mobile',icon:'▯'},laptop:{title:'Laptop Inventory',sub:'Manage company laptops and their assigned employees.',singular:'Laptop',icon:'▱'},desktop_cpu:{title:'Desktop / CPU Inventory',sub:'All desktops, CPUs and workstations in one place.',singular:'Desktop / CPU',icon:'▤'},vehicle:{title:'Staff Vehicles',sub:'Maintain employee vehicle and registration details.',singular:'Vehicle',icon:'◇'}};
+const types={
+  staff:{title:'Staff Directory',sub:'Keep your people records accurate and up to date.',singular:'Staff Member',icon:'♙'},
+  company_mobile:{title:'Company Mobiles',sub:'Track office mobile phones, SIMs and assignments.',singular:'Company Mobile',icon:'▯'},
+  laptop:{title:'Laptop Inventory',sub:'Manage company laptops and their assigned employees.',singular:'Laptop',icon:'▱'},
+  desktop_cpu:{title:'Desktop / CPU Inventory',sub:'All desktops, CPUs and workstations in one place.',singular:'Desktop / CPU',icon:'▤'},
+  vehicle:{title:'Staff Vehicles',sub:'Maintain employee vehicle and registration details.',singular:'Vehicle',icon:'◇'}
+};
+
 let state={view:'dashboard',staff:[],assets:[],overview:null,ebBills:[],ebSummary:null,photoKeys:new Set(),query:'',filter:'all',editing:null,kind:null};
-function toast(s){const e=$('#toast');e.textContent=s;e.classList.remove('hidden');clearTimeout(toast.timer);toast.timer=setTimeout(()=>e.classList.add('hidden'),3500)}
+let detailState={kind:null,id:null};
+
+function toast(s){const e=$('#toast');e.textContent=s;e.classList.remove('hidden');clearTimeout(toast.timer);toast.timer=setTimeout(()=>e.classList.add('hidden'),3500);}
+
 // v1.4.5: Never expose the workspace until the server verifies its session.
 let sessionActive=false;
 const authRoutes=new Set(['/api/health','/api/setup','/api/login','/api/logout']);
-function sessionEnded(message='Please sign in again.'){sessionActive=false;closeModal();state.staff=[];state.assets=[];state.ebBills=[];state.overview=null;state.ebSummary=null;state.photoKeys=new Set();$('#content').innerHTML='';showAuth(false);$('#authError').textContent=message;$('#authError').classList.remove('hidden');}
-async function api(url,options={}){const r=await fetch(url,{...options,credentials:'same-origin',cache:'no-store',headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});const p=await r.json().catch(()=>({}));if(!r.ok){if(r.status===401&&!authRoutes.has(url)&&sessionActive)sessionEnded();throw Object.assign(Error(p.error||`Request failed (${r.status})`),{status:r.status});}return p;}
-async function refresh(){const [s,a,o,e,em,photos]=await Promise.all([api('/api/staff'),api('/api/assets'),api('/api/overview'),api('/api/eb/bills'),api('/api/eb/summary'),api('/api/photos')]);if(!sessionActive)return false;state.photoKeys=new Set(photos.keys);state.staff=s.items;state.assets=a.items;state.overview=o;state.ebBills=e.items;state.ebSummary=em;render();return true;}
-function showAuth(setup){$('#auth').classList.remove('hidden');$('#app').classList.add('hidden');state.setup=setup;$('#authTitle').textContent=setup?'Set up your workspace':'Welcome back';$('#authDescription').textContent=setup?'Create a secure admin password to start managing your team.':'Sign in to your NUNES workspace.';$('#authSubmit').innerHTML=setup?'Create workspace <span>→</span>':'Sign in <span>→</span>';$('#setupHint').classList.toggle('hidden',!setup);$('#password').setAttribute('autocomplete',setup?'new-password':'current-password');$('#password').value='';$('#password').type='password';updatePasswordVisibility();$('#authError').classList.add('hidden');}
-function updatePasswordVisibility(){const visible=$('#password').type==='text';const b=$('#togglePassword');b.setAttribute('aria-label',visible?'Hide password':'Show password');b.setAttribute('title',visible?'Hide password':'Show password');b.setAttribute('aria-pressed',String(visible));$('#eyeIcon').innerHTML=visible?'<path d="M3 3 21 21"/><path d="M10.6 5.9A11.2 11.2 0 0 1 12 5.8c6.5 0 10 6.2 10 6.2a16 16 0 0 1-3 3.7"/><path d="M6.3 6.4C3.5 8.1 2 12 2 12s3.5 6.2 10 6.2c1.8 0 3.3-.5 4.6-1.2"/><path d="M10.2 10.2a3 3 0 0 0 3.6 3.6"/>':'<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';}
-$('#togglePassword').addEventListener('click',()=>{$('#password').type=$('#password').type==='password'?'text':'password';updatePasswordVisibility();$('#password').focus();});
-async function enterWorkspace(){const me=await api('/api/me');if(me.authenticated!==true)throw Error('Login session could not be verified.');sessionActive=true;if(!await refresh())return;$('#auth').classList.add('hidden');$('#app').classList.remove('hidden');}
-async function init(){try{const h=await api('/api/health');if(h.setupRequired){showAuth(true);return;}showAuth(false);await enterWorkspace();}catch(e){sessionActive=false;showAuth(false);if(e.status!==401){$('#authError').textContent='Could not connect to backend: '+e.message;$('#authError').classList.remove('hidden');}}}
-$('#authForm').addEventListener('submit',async e=>{e.preventDefault();const b=$('#authSubmit');b.disabled=true;try{await api(state.setup?'/api/setup':'/api/login',{method:'POST',body:JSON.stringify({password:$('#password').value})});state.setup=false;await enterWorkspace();}catch(err){sessionActive=false;showAuth(state.setup);$('#authError').textContent=err.status===401&&err.message==='Please sign in'?'Login session could not be saved. Enable cookies and sign in again.':err.message;$('#authError').classList.remove('hidden');}finally{b.disabled=false;}});
-async function signOut(){try{await api('/api/logout',{method:'POST'});sessionEnded('Signed out successfully.');$('#authError').classList.add('hidden');}catch(e){toast('Sign out failed: '+e.message);}}
+
+function sessionEnded(message='Please sign in again.'){
+  sessionActive=false;
+  closeModal();
+  closeDetailModal();
+  state.staff=[];state.assets=[];state.ebBills=[];state.overview=null;state.ebSummary=null;state.photoKeys=new Set();
+  $('#content').innerHTML='';
+  showAuth(false);
+  $('#authError').textContent=message;
+  $('#authError').classList.remove('hidden');
+}
+
+async function api(url,options={}){
+  const r=await fetch(url,{...options,credentials:'same-origin',cache:'no-store',headers:{...(options.body?{'Content-Type':'application/json'}:{}),...(options.headers||{})}});
+  const p=await r.json().catch(()=>({}));
+  if(!r.ok){
+    if(r.status===401&&!authRoutes.has(url)&&sessionActive)sessionEnded();
+    throw Object.assign(Error(p.error||`Request failed (${r.status})`),{status:r.status});
+  }
+  return p;
+}
+
+async function refresh(){
+  const [s,a,o,e,em,photos]=await Promise.all([
+    api('/api/staff'),
+    api('/api/assets'),
+    api('/api/overview'),
+    api('/api/eb/bills'),
+    api('/api/eb/summary'),
+    api('/api/photos')
+  ]);
+  if(!sessionActive)return false;
+  state.photoKeys=new Set(photos.keys);
+  state.staff=s.items;
+  state.assets=a.items;
+  state.overview=o;
+  state.ebBills=e.items;
+  state.ebSummary=em;
+  render();
+  return true;
+}
+
+function showAuth(setup){
+  $('#auth').classList.remove('hidden');
+  $('#app').classList.add('hidden');
+  state.setup=setup;
+  $('#authTitle').textContent=setup?'Set up your workspace':'Welcome back';
+  $('#authDescription').textContent=setup?'Create a secure admin password to start managing your team.':'Sign in to your NUNES workspace.';
+  $('#authSubmit').innerHTML=setup?'Create workspace <span>→</span>':'Sign in <span>→</span>';
+  $('#setupHint').classList.toggle('hidden',!setup);
+  $('#password').setAttribute('autocomplete',setup?'new-password':'current-password');
+  $('#password').value='';
+  $('#password').type='password';
+  updatePasswordVisibility();
+  $('#authError').classList.add('hidden');
+}
+
+function updatePasswordVisibility(){
+  const visible=$('#password').type==='text';
+  const b=$('#togglePassword');
+  b.setAttribute('aria-label',visible?'Hide password':'Show password');
+  b.setAttribute('title',visible?'Hide password':'Show password');
+  b.setAttribute('aria-pressed',String(visible));
+  $('#eyeIcon').innerHTML=visible
+    ?'<path d="M3 3 21 21"/><path d="M10.6 5.9A11.2 11.2 0 0 1 12 5.8c6.5 0 10 6.2 10 6.2a16 16 0 0 1-3 3.7"/><path d="M6.3 6.4C3.5 8.1 2 12 2 12s3.5 6.2 10 6.2c1.8 0 3.3-.5 4.6-1.2"/><path d="M10.2 10.2a3 3 0 0 0 3.6 3.6"/>'
+    :'<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
+}
+
+$('#togglePassword').addEventListener('click',()=>{
+  $('#password').type=$('#password').type==='password'?'text':'password';
+  updatePasswordVisibility();
+  $('#password').focus();
+});
+
+async function enterWorkspace(){
+  const me=await api('/api/me');
+  if(me.authenticated!==true)throw Error('Login session could not be verified.');
+  sessionActive=true;
+  if(!await refresh())return;
+  $('#auth').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+}
+
+async function init(){
+  try{
+    const h=await api('/api/health');
+    if(h.setupRequired){showAuth(true);return;}
+    showAuth(false);
+    await enterWorkspace();
+  }catch(e){
+    sessionActive=false;
+    showAuth(false);
+    if(e.status!==401){
+      $('#authError').textContent='Could not connect to backend: '+e.message;
+      $('#authError').classList.remove('hidden');
+    }
+  }
+}
+
+$('#authForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const b=$('#authSubmit');
+  b.disabled=true;
+  try{
+    await api(state.setup?'/api/setup':'/api/login',{method:'POST',body:JSON.stringify({password:$('#password').value})});
+    state.setup=false;
+    await enterWorkspace();
+  }catch(err){
+    sessionActive=false;
+    showAuth(state.setup);
+    $('#authError').textContent=err.status===401&&err.message==='Please sign in'?'Login session could not be saved. Enable cookies and sign in again.':err.message;
+    $('#authError').classList.remove('hidden');
+  }finally{
+    b.disabled=false;
+  }
+});
+
+async function signOut(){
+  try{
+    await api('/api/logout',{method:'POST'});
+    sessionEnded('Signed out successfully.');
+    $('#authError').classList.add('hidden');
+  }catch(e){
+    toast('Sign out failed: '+e.message);
+  }
+}
+
 $('#logout').onclick=signOut;
-// Top-bar sign out remains visible even when the sidebar is clipped.
-const topLogout=document.createElement('button');topLogout.type='button';topLogout.className='btn';topLogout.id='topLogout';topLogout.textContent='Sign out';topLogout.style.cssText='padding:7px 10px;white-space:nowrap;font-size:12px';topLogout.onclick=signOut;$('.top-actions').appendChild(topLogout);
+
+// Top-bar sign out button
+const topLogout=document.createElement('button');
+topLogout.type='button';
+topLogout.className='btn';
+topLogout.id='topLogout';
+topLogout.textContent='Sign out';
+topLogout.style.cssText='padding:7px 11px;white-space:nowrap;font-size:12px';
+topLogout.onclick=signOut;
+$('.top-actions').appendChild(topLogout);
+
 const niceDate=s=>s?new Date(s.includes('T')?s:s+'T12:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
-const staffName=id=>state.staff.find(x=>x.id===id)?.name||'Unassigned';
-function navigate(v){state.view=v;state.query='';state.filter='all';render();window.scrollTo(0,0);}
-document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.view)));
-function render(){const v=state.view;$('#breadcrumb').textContent=v==='dashboard'?'Dashboard':v==='reports'?'Reports & Backup':v==='eb'?'EB Expenses':types[v].title;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));$('#dateNow').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});$('#content').innerHTML=v==='dashboard'?dashboard():v==='reports'?reports():v==='eb'?ebPage():directory(v);wireContent();}
-function heading(title,sub,actions=''){return `<div class="page-heading"><div><div class="eyebrow">STAFF & ASSET MANAGEMENT</div><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><div class="head-actions">${actions}</div></div>`;}
-const btn=(label,action,extra='')=>`<button class="btn ${extra}" data-action="${action}">${label}</button>`;
-function metric(label,n,icon,foot=''){return `<div class="kpi"><div class="kpi-head"><span>${esc(label)}</span><span class="kpi-icon">${icon}</span></div><div class="kpi-value">${n}</div><div class="kpi-foot">${foot}</div></div>`;}
-function dashboard(){const o=state.overview||{staffTotal:0,active:0,relieved:0,counts:{},activity:[],unassigned:0};const total=state.assets.length;return heading('Good day, Administrator 👋','Staff, assets and NUNES office electricity expenses in one place.',btn('+ Add Staff','add-staff','primary')+btn('+ Add Asset','add-asset'))+`<div class="kpi-grid">${metric('Total Staff',o.staffTotal,'♙',`<strong>${o.active}</strong> currently active`)}${metric('Company Mobiles',o.counts.company_mobile||0,'▯','Registered devices')}${metric('Laptops & Desktop CPUs',(o.counts.laptop||0)+(o.counts.desktop_cpu||0),'▤','Company computers')}${metric('Staff Vehicles',o.counts.vehicle||0,'◇','Registered vehicles')}</div><div class="eb-dashboard-strip"><div><strong>⚡ NUNES Electricity Expenses</strong><small>Pending bills: ${state.ebSummary?.pending||0} · This month: ₹${money(state.ebSummary?.currentMonthTotal||0)}</small></div>${btn('Open EB Expenses →','go-eb')}</div><div class="two-col"><section class="panel"><div class="panel-head"><div><h2>Asset Overview</h2><p>Inventory distribution across categories</p></div><button class="link-btn" data-action="go-reports">Reports →</button></div><div class="category-list">${Object.keys(types).filter(k=>k!=='staff').map(k=>{const n=o.counts[k]||0;return `<div class="category-row"><div class="category-icon">${types[k].icon}</div><div class="category-info">${types[k].title}</div><div class="bar-bg"><div class="bar-fill" style="width:${total?Math.max(2,n/total*100):0}%"></div></div><div class="category-num">${n}</div></div>`}).join('')}</div></section><section class="panel"><div class="panel-head"><div><h2>Recent Activity</h2><p>Your latest updates across the workspace</p></div></div><div class="activity-list">${o.activity.length?o.activity.map(x=>`<div class="activity-row"><div class="activity-mark">↗</div><div><strong>${esc(x.action)} · ${esc(x.label)}</strong><small>${niceDate(x.date)}</small></div></div>`).join(''):`<div class="empty-state"><div class="empty-icon">↗</div><h3>No activity yet</h3><p>Your updates will appear here.</p></div>`}</div></section></div><div class="section-hint"><span style="font-size:20px">ⓘ</span><span><b>People status:</b> ${o.active} active · ${o.onLeave} on leave · ${o.relieved} relieved. ${o.unassigned} non-vehicle assets are currently unassigned.</span></div>`;}
-function badge(status){const css=(status||'').replace(/\s+/g,'');return `<span class="pill ${esc(css)}">${esc(status||'—')}</span>`;}
-function staffAssetSummary(id){const found=state.assets.filter(a=>a.assignedStaffId===id);if(!found.length)return '<span class="muted">No assets</span>';const labels={company_mobile:'Mobile',laptop:'Laptop',desktop_cpu:'CPU',vehicle:'Vehicle'};const counts={};found.forEach(a=>{counts[a.type]=(counts[a.type]||0)+1});return `<strong>${found.length} assigned</strong><span class="subcell">${Object.entries(counts).map(([k,n])=>`${n} ${labels[k]||'Asset'}`).join(' · ')}</span>`;}
-function photoUrl(collection,id){return '/api/photos/'+collection+'/'+encodeURIComponent(id);}
-function photoThumb(collection,id){return state.photoKeys.has(collection+':'+id)?`<a href="${photoUrl(collection,id)}" target="_blank" rel="noopener" title="View image"><img src="${photoUrl(collection,id)}" alt="Record image" loading="lazy" style="width:38px;height:38px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px"></a>`:'';}
-function photoFields(collection,id){const has=id&&state.photoKeys.has(collection+':'+id);return `<div class="field full"><label for="recordPhoto">${collection==='staff'?'Employee Photo':collection==='ebBills'?'EB Image':'Asset Photo'} (JPG, PNG, WebP · max 1 MB)</label><input id="recordPhoto" type="file" accept="image/jpeg,image/png,image/webp"><img id="photoPreview" alt="Image preview" ${has?`src="${photoUrl(collection,id)}"`:'hidden'} style="max-width:180px;max-height:150px;object-fit:contain;border-radius:8px;margin-top:8px">${has?'<label><input type="checkbox" id="removePhoto" style="width:auto"> Remove existing image on save</label>':''}</div>`;}
-function wirePhoto(){const input=$('#recordPhoto');if(!input)return;input.onchange=async()=>{const f=input.files[0];if(!f)return;try{await photoPayload();const preview=$('#photoPreview');preview.src='data:'+f.type+';base64,'+await fileToBase64(f);preview.hidden=false;if($('#removePhoto'))$('#removePhoto').checked=false;}catch(e){input.value='';toast(e.message);}};}
-async function photoPayload(){const file=$('#recordPhoto')?.files?.[0];if(!file)return null;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>1048576)throw Error('Choose a JPG, PNG or WebP image under 1 MB');return {mime:file.type,base64:await fileToBase64(file)};}
-async function savePhoto(collection,id,photo,remove){if(photo)await api(photoUrl(collection,id),{method:'POST',body:JSON.stringify(photo)});else if(remove)await api(photoUrl(collection,id),{method:'DELETE'});}
-function rows(v,items){if(v==='staff')return items.map(x=>`<tr><td class="primary-cell">${photoThumb('staff',x.id)}${esc(x.name)}<span class="subcell">${esc(x.employeeId||'No employee ID')}</span></td><td>${esc(x.department||'—')}</td><td>${esc(x.designation||'—')}</td><td>${esc(x.phone||'—')}</td><td>${badge(x.status)}</td><td>${staffAssetSummary(x.id)}</td><td><div class="row-actions"><button class="action" data-action="details" data-id="${x.id}">View</button><button class="action" data-action="edit" data-id="${x.id}">Edit</button><button class="action delete" data-action="delete" data-id="${x.id}">Delete</button></div></td></tr>`).join('');return items.map(x=>`<tr><td class="primary-cell">${photoThumb('assets',x.id)}${esc(x.name)}<span class="subcell">${esc(x.assetTag||'No asset ID')}</span></td><td>${esc(x.brand||'—')} ${esc(x.model||'')}</td><td>${esc(x.type==='company_mobile'?(x.phone||x.serial||'—'):x.type==='vehicle'?(x.registration||'—'):(x.serial||'—'))}</td><td>${esc(staffName(x.assignedStaffId))}${state.staff.find(s=>s.id===x.assignedStaffId)?.status==='Relieved'?'<span class="subcell" style="color:#d85c6b">Relieved – review allocation</span>':''}</td><td>${badge(x.condition)}</td><td><div class="row-actions"><button class="action" data-action="edit" data-id="${x.id}">Edit</button><button class="action delete" data-action="delete" data-id="${x.id}">Delete</button></div></td></tr>`).join('');}
-function directory(v){const t=types[v];const all=v==='staff'?state.staff:state.assets.filter(a=>a.type===v);let items=all.filter(x=>{const searchable=Object.values(x).join(' ').toLowerCase()+' '+(v==='staff'?'':staffName(x.assignedStaffId).toLowerCase());return searchable.includes(state.query.toLowerCase())&& (state.filter==='all'||(v==='eb'?(state.filter==='Overdue'?x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10):x.status===state.filter):v==='staff'?x.status===state.filter:x.condition===state.filter));});const cols=v==='staff'?['Employee','Department','Designation','Phone','Status','Assets','Actions']:['Asset','Brand / Model',v==='company_mobile'?'Mobile / IMEI':v==='vehicle'?'Registration':'Serial Number','Assigned To','Condition','Actions'];const options=v==='staff'?['Active','On Leave','Relieved']:['Good','Needs Repair','Under Repair','Retired'];return heading(t.title,t.sub,btn('↓ Export CSV','export')+btn('+ Add '+t.singular,'add-current','primary'))+`<section class="panel"><div class="panel-head"><div><h2>${esc(t.title)} <span style="color:#9faabd;font-weight:500">(${all.length})</span></h2><p>Search, update and organize your records</p></div></div><div class="table-tools"><input class="search" id="search" placeholder="Search by name, code, model or contact..." value="${esc(state.query)}" aria-label="Search records"><select class="filter" id="filter"><option value="all">All statuses</option>${options.map(o=>`<option value="${esc(o)}" ${state.filter===o?'selected':''}>${esc(o)}</option>`).join('')}</select></div><div class="table-scroll"><table class="data-table"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody id="tableRows">${rows(v,items)}</tbody></table>${items.length?'':`<div class="empty-state"><div class="empty-icon">${t.icon}</div><h3>${all.length?'No matches found':'No records yet'}</h3><p>${all.length?'Try a different search or filter.':'Get started by adding your first '+t.singular.toLowerCase()+'.'}</p>${!all.length?btn('+ Add '+t.singular,'add-current','primary'):''}</div>`}</div><div class="count-foot">Showing ${items.length} of ${all.length} records</div></section>`;}
-function reports(){return heading('Reports & Backup','Export your records or securely save a copy of your data.')+`<div class="report-grid"><div class="report-card"><div class="report-icon">♙</div><h3>Staff Report</h3><p>Download employees, departments, contacts and current / relieved statuses.</p>${btn('↓ Download Staff CSV','export-staff')}</div><div class="report-card"><div class="report-icon">▤</div><h3>Asset Reports</h3><p>Download mobiles, laptops, CPUs and vehicles in separate Excel-compatible files.</p>${btn('↓ Download All Asset CSVs','export-all')}</div><div class="report-card"><div class="report-icon">⬡</div><h3>Full Backup</h3><p>Save staff, inventory, EB bills, attachments and activity to JSON.</p>${btn('↓ Download Backup','backup','primary')}</div></div><section class="panel"><div class="panel-head"><div><h2>Download Individual Reports</h2><p>Select one inventory category for its own CSV</p></div></div><div class="report-list">${Object.keys(types).map(k=>btn('↓ '+types[k].title,'export-'+k)).join('')}</div></section><section class="panel" style="margin-top:20px"><div class="panel-head"><div><h2>EB Monthly Expense Report</h2><p>Electricity bill and payment records (Excel-compatible CSV)</p></div>${btn('↓ Download EB CSV','export-eb')}</div></section><section class="panel" style="margin-top:20px"><div class="panel-head"><div><h2>Restore a Backup</h2><p>Import a previously downloaded NUNES JSON backup.</p></div><button class="btn danger" data-action="restore">↑ Restore from JSON</button></div><div class="section-hint" style="margin:0 23px 23px">⚠ Restoring a backup replaces all current staff and asset records. Download your current backup before restoring.</div><input id="restoreFile" type="file" accept=".json,application/json" class="hidden"></section>`;}
-const field=(key,label,kind='text',required=false,options=null,full=false)=>({key,label,kind,required,options,full});
-const staffFields=[field('employeeId','Employee ID / Staff Code'),field('name','Full Name','text',true),field('department','Department'),field('designation','Job Title / Designation'),field('phone','Contact Number','tel'),field('email','Email Address','email'),field('joinDate','Joining Date','date'),field('status','Employment Status','select',true,['Active','On Leave','Relieved']),field('relievedDate','Relieved Date','date'),field('notes','Notes / Remarks','textarea',false,null,true)];
-const assetFields=[field('type','Asset Category','select',true,Object.keys(types).filter(x=>x!=='staff')),field('assetTag','Asset ID / Inventory Code'),field('name','Item Name','text',true),field('brand','Brand'),field('model','Model'),field('serial','Serial Number / IMEI'),field('phone','Mobile / SIM Number','tel'),field('simProvider','SIM Network / Provider'),field('registration','Vehicle Registration Number'),field('ownership','Vehicle Ownership','select',false,['','Personal','Company']),field('purchaseDate','Purchase / Registration Date','date'),field('condition','Condition','select',false,['Good','Needs Repair','Under Repair','Retired']),field('assignmentStatus','Assignment Status','select',false,['Unassigned','Assigned']),field('assignedStaffId','Staff Name','staff'),field('notes','Notes / Remarks','textarea',false,null,true)];
-function openForm(kind,id=null){state.kind=kind;state.editing=id;const item=id?(kind==='staff'?state.staff:state.assets).find(x=>x.id===id):{};if(id&&!item)return toast('Record no longer exists');$('#modalTitle').textContent=(id?'Edit ':'Add ')+(kind==='staff'?'Staff Member':'Asset');$('#modalSave').classList.remove('hidden');$('#modalSave').textContent='Save record →';const formFields=kind==='staff'?staffFields:assetFields;$('#formFields').innerHTML=formFields.map(f=>{let v=(f.key==='assignmentStatus'?(item.assignedStaffId?'Assigned':'Unassigned'):item[f.key])??(f.key==='type'?state.view!=='dashboard'&&state.view!=='reports'&&state.view!=='staff'?state.view:'company_mobile':f.key==='status'?'Active':f.key==='condition'?'Good':'');let el=f.kind==='select'?`<select name="${f.key}" id="f_${f.key}">${f.options.map(x=>{const val=f.key==='type'?(types[x]?.title||x):x;return `<option value="${esc(x)}" ${v===x?'selected':''}>${esc(val||'Select...')}</option>`}).join('')}</select>`:f.kind==='staff'?`<select name="${f.key}" id="f_${f.key}"><option value="">Select staff member</option>${state.staff.map(s=>`<option value="${s.id}" ${v===s.id?'selected':''}>${esc(s.name)}${s.status==='Relieved'?' (Relieved)':''}</option>`).join('')}</select>`:f.kind==='textarea'?`<textarea name="${f.key}" id="f_${f.key}" placeholder="Optional details">${esc(v)}</textarea>`:`<input name="${f.key}" id="f_${f.key}" type="${f.kind}" value="${esc(v)}" ${f.required?'required':''} placeholder="${esc(f.label)}">`;return `<div class="field ${f.full?'full':''}" data-field="${f.key}"><label for="f_${f.key}">${f.label}${f.required?' *':''}</label>${el}</div>`}).join('')+photoFields(kind==='staff'?'staff':'assets',id);wirePhoto();$('#formError').classList.add('hidden');$('#modalBackdrop').classList.remove('hidden');const update=()=>{if(kind==='staff'){$('[data-field="relievedDate"]').style.display=$('#f_status').value==='Relieved'?'':'none';}else{const t=$('#f_type').value;const show={phone:t==='company_mobile',simProvider:t==='company_mobile',registration:t==='vehicle',ownership:t==='vehicle'};Object.keys(show).forEach(k=>{$(`[data-field="${k}"]`).style.display=show[k]?'':'none';});const assigning=['company_mobile','laptop','desktop_cpu'].includes(t);$('[data-field="assignmentStatus"]').style.display=assigning?'':'none';if(assigning){const selected=$('#f_assignmentStatus').value==='Assigned';$('[data-field="assignedStaffId"]').style.display=selected?'':'none';$('#f_assignedStaffId').required=selected;if(!selected)$('#f_assignedStaffId').value='';}else{$('[data-field="assignedStaffId"]').style.display='';$('#f_assignedStaffId').required=false;}}};$('#f_status')?.addEventListener('change',update);$('#f_type')?.addEventListener('change',update);$('#f_assignmentStatus')?.addEventListener('change',update);update();$('#f_name').focus();}
-function closeModal(){$('#modalBackdrop').classList.add('hidden');state.editing=null;$('#modalSave').classList.remove('hidden');}
-$('#modalClose').onclick=closeModal;$('#modalCancel').onclick=closeModal;$('#modalBackdrop').addEventListener('click',e=>{if(e.target===$('#modalBackdrop'))closeModal();});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#modalBackdrop').classList.contains('hidden'))closeModal();});
-$('#recordForm').addEventListener('submit',async e=>{e.preventDefault();const b=$('#modalSave');const payload=Object.fromEntries(new FormData(e.currentTarget).entries());if(state.kind==='eb'){const file=$('#ebFile')?.files?.[0];b.disabled=true;try{const photo=await photoPayload(),remove=$('#removePhoto')?.checked;const method=state.editing?'PUT':'POST';const item=await api('/api/eb/bills'+(state.editing?'/'+state.editing:''),{method,body:JSON.stringify(payload)});state.editing=item.item.id;await savePhoto('ebBills',item.item.id,photo,remove);if(file){if(file.size>1024*1024)throw Error('Max bill attachment 1 MB. Bill details were saved, but file was not uploaded.');const base64=await fileToBase64(file);await api('/api/eb/attachment/'+item.item.id,{method:'POST',body:JSON.stringify({name:file.name,mime:file.type,base64})});}closeModal();toast('EB bill saved');await refresh();}catch(err){$('#formError').textContent=err.message;$('#formError').classList.remove('hidden');}finally{b.disabled=false;}return;}const isStaff=state.kind==='staff';if(!isStaff){const assignStatus=payload.assignmentStatus;delete payload.assignmentStatus;if(['company_mobile','laptop','desktop_cpu'].includes(payload.type)){if(assignStatus==='Assigned'&&!payload.assignedStaffId){$('#formError').textContent='Please select a staff member from Staff Directory first.';$('#formError').classList.remove('hidden');return;}if(assignStatus!=='Assigned')payload.assignedStaffId='';}const t=payload.type;if(t!=='company_mobile'){payload.phone='';payload.simProvider='';}if(t!=='vehicle'){payload.registration='';payload.ownership='';}}const route=isStaff?'/api/staff':'/api/assets';b.disabled=true;try{const photo=await photoPayload(),remove=$('#removePhoto')?.checked;const result=await api(route+(state.editing?'/'+state.editing:''),{method:state.editing?'PUT':'POST',body:JSON.stringify(payload)});state.editing=result.item.id;await savePhoto(isStaff?'staff':'assets',result.item.id,photo,remove);closeModal();toast('Record saved successfully');await refresh();}catch(err){$('#formError').textContent=err.message;$('#formError').classList.remove('hidden');}finally{b.disabled=false;}});
-function openDetail(id){const s=state.staff.find(x=>x.id===id);if(!s)return;state.kind='detail';state.editing=null;$('#modalTitle').textContent=s.name;const props=[['Employee ID',s.employeeId],['Department',s.department],['Designation',s.designation],['Phone',s.phone],['Email',s.email],['Joining Date',niceDate(s.joinDate)],['Status',s.status],['Relieved Date',s.relievedDate?niceDate(s.relievedDate):'—'],['Notes',s.notes]];const assets=state.assets.filter(a=>a.assignedStaffId===id);$('#formFields').innerHTML=`<div class="field full">${photoThumb('staff',s.id)}<div class="detail-list">${props.map(([k,v])=>`<div class="detail-entry"><label>${esc(k)}</label><b>${esc(v||'—')}</b></div>`).join('')}</div><div class="details-assets"><h3>Assigned devices & vehicles (${assets.length})</h3>${assets.length?`<ul>${assets.map(a=>`<li>${esc(a.name)} (${esc(types[a.type].title)}) · ${esc(a.assetTag||'No ID')}</li>`).join('')}</ul>`:'<p class="muted">No assets currently assigned.</p>'}</div></div>`;$('#formError').classList.add('hidden');$('#modalSave').classList.add('hidden');$('#modalBackdrop').classList.remove('hidden');}
 const money=v=>Number(v||0).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:2});
-const ebFields=[field('location','Office / Location','text',true),field('serviceNumber','EB Service Number','text',true),field('consumerName','Consumer Name'),field('meterNumber','Meter Number'),field('connectionType','Connection Type','select',false,['Commercial','Industrial','Domestic','Other']),field('billMonth','Bill Month','month',true),field('previousReading','Previous Reading','number'),field('currentReading','Current Reading','number'),field('units','Units Consumed','number'),field('amount','Bill Amount (₹)','number',true),field('dueDate','Due Date','date'),field('status','Payment Status','select',true,['Pending','Paid']),field('paymentDate','Payment Date','date'),field('paymentMethod','Payment Method','select',false,['','UPI','Bank Transfer','Cash','Cheque','Card','Other']),field('transactionId','Payment Reference / UTR'),field('notes','Remarks','textarea',false,null,true)];
-function ebPage(){const summary=state.ebSummary||{connections:0,bills:0,currentMonthTotal:0,yearTotal:0,pending:0,pendingAmount:0,overdue:0};const all=state.ebBills;const items=all.filter(x=>Object.values(x).join(' ').toLowerCase().includes(state.query.toLowerCase())&&(state.filter==='all'||(state.filter==='Overdue'?(x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10)):x.status===state.filter))).sort((a,b)=>b.billMonth.localeCompare(a.billMonth));return heading('EB Expense Management','NUNES Instruments · Office electricity connections, monthly bills and payments.',btn('↓ EB Report CSV','export-eb')+btn('+ Add EB Bill','add-eb','primary'))+`<div class="kpi-grid">${metric('EB Connections',summary.connections,'⚡','Unique service numbers')}${metric('This Month Bill','₹'+money(summary.currentMonthTotal),'₹','Entered current-month bills')}${metric('Yearly Expense','₹'+money(summary.yearTotal),'▥','Current calendar year')}${metric('Pending Bills',summary.pending,'◷','₹'+money(summary.pendingAmount)+' unpaid · '+summary.overdue+' overdue')}</div><section class="panel"><div class="panel-head"><div><h2>Electricity Bill Register <span style="color:#9faabd;font-weight:500">(${all.length})</span></h2><p>Office service number, bill month, paid / pending, due dates and receipts</p></div></div><div class="table-tools"><input class="search" id="search" placeholder="Search month, service number, location..." value="${esc(state.query)}"><select class="filter" id="filter"><option value="all">All payments</option>${['Paid','Pending','Overdue'].map(s=>`<option value="${s}" ${state.filter===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="table-scroll"><table class="data-table"><thead><tr>${['Month','Location / Service No.','Units','Amount','Due Date','Payment','Bill File','Actions'].map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody id="tableRows">${ebRows(items)}</tbody></table>${!all.length?`<div class="empty-state"><div class="empty-icon">⚡</div><h3>No EB bills yet</h3><p>Add the first NUNES electricity bill to start tracking expenses.</p>${btn('+ Add First EB Bill','add-eb','primary')}</div>`:''}</div><div class="count-foot">Showing ${items.length} of ${all.length} bills</div></section><div class="wide-note">For multiple EB service numbers at the same NUNES location, enter each connection separately. Only bills you enter are reflected in totals. Original bill files are stored inside the local protected backup (maximum 1 MB per file).</div>`;}
-function ebRows(items){return items.map(x=>{const overdue=x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10);return `<tr><td class="primary-cell">${photoThumb('ebBills',x.id)}${esc(x.billMonth)}</td><td>${esc(x.location)}<span class="subcell">${esc(x.serviceNumber)}</span></td><td>${esc(x.units||'—')}</td><td class="primary-cell">₹${money(x.amount)}</td><td>${niceDate(x.dueDate)}</td><td>${badge(overdue?'Overdue':x.status)}</td><td>${x.hasAttachment?`<button class="action" data-action="eb-download" data-id="${x.id}">↓ View Bill</button>`:'—'}</td><td><div class="row-actions"><button class="action" data-action="eb-edit" data-id="${x.id}">Edit</button><button class="action delete" data-action="eb-delete" data-id="${x.id}">Delete</button></div></td></tr>`}).join('');}
-function openEb(id=null){state.kind='eb';state.editing=id;const x=state.ebBills.find(b=>b.id===id)||{};if(id&&!x)return toast('EB bill no longer exists');$('#modalTitle').textContent=id?'Edit EB Bill':'Add EB Bill';$('#modalSave').classList.remove('hidden');$('#modalSave').textContent='Save EB bill →';$('#formFields').innerHTML=ebFields.map(f=>{const val=x[f.key]??(f.key==='location'?'NUNES Office':f.key==='consumerName'?'NUNES Instruments':f.key==='status'?'Pending':f.key==='billMonth'?new Date().toISOString().slice(0,7):'');const input=f.kind==='select'?`<select id="f_${f.key}" name="${f.key}">${f.options.map(v=>`<option value="${esc(v)}" ${val===v?'selected':''}>${esc(v||'Select...')}</option>`).join('')}</select>`:f.kind==='textarea'?`<textarea name="${f.key}" id="f_${f.key}">${esc(val)}</textarea>`:`<input name="${f.key}" id="f_${f.key}" type="${f.kind}" ${f.kind==='number'?'step="0.01" min="0"':''} value="${esc(val)}" ${f.required?'required':''}>`;return `<div class="field ${f.full?'full':''}"><label for="f_${f.key}">${esc(f.label)}${f.required?' *':''}</label>${input}</div>`}).join('')+`<div class="field full"><label for="ebFile">EB Bill Receipt (PDF, JPG, PNG · max 1 MB)</label><input id="ebFile" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg">${x.hasAttachment?`<small class="muted">Current attachment saved. Upload another to replace it.</small>`:''}</div>`+photoFields('ebBills',id);wirePhoto();$('#formError').classList.add('hidden');$('#modalBackdrop').classList.remove('hidden');$('#f_serviceNumber').focus();}
-function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Unable to read bill file'));reader.readAsDataURL(file);});}
-function download(type){window.location.href='/api/export?type='+encodeURIComponent(type)}
-function wireContent(){const search=$('#search'),filter=$('#filter');if(search)search.addEventListener('input',e=>{state.query=e.target.value;updateRows();});if(filter)filter.addEventListener('change',e=>{state.filter=e.target.value;updateRows();});$('#content').querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>action(b.dataset.action,b.dataset.id)));}
-function updateRows(){const v=state.view,all=v==='eb'?state.ebBills:v==='staff'?state.staff:state.assets.filter(a=>a.type===v);const items=all.filter(x=>(Object.values(x).join(' ')+' '+staffName(x.assignedStaffId)).toLowerCase().includes(state.query.toLowerCase())&&(state.filter==='all'||(v==='eb'?(state.filter==='Overdue'?x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10):x.status===state.filter):v==='staff'?x.status===state.filter:x.condition===state.filter)));const body=$('#tableRows');if(body){body.innerHTML=v==='eb'?ebRows(items.sort((a,b)=>b.billMonth.localeCompare(a.billMonth))):rows(v,items);body.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>action(b.dataset.action,b.dataset.id)));}const foot=$('.count-foot');if(foot)foot.textContent=`Showing ${items.length} of ${all.length} records`;}
-async function action(a,id){if(a==='go-eb')return navigate('eb');if(a==='add-eb')return openEb();if(a==='eb-edit')return openEb(id);if(a==='eb-download'){window.location.href='/api/eb/attachment/'+id;return;}if(a==='eb-delete'){const b=state.ebBills.find(x=>x.id===id);if(!b)return;if(!confirm(`Delete EB bill ${b.billMonth} (${b.serviceNumber}) and attached file permanently?`))return;try{await api('/api/eb/bills/'+id,{method:'DELETE'});toast('EB bill deleted');await refresh();}catch(e){toast(e.message);}return;}if(a==='add-staff')return openForm('staff');if(a==='add-asset')return openForm('asset');if(a==='add-current')return openForm(state.view==='staff'?'staff':'asset');if(a==='go-reports')return navigate('reports');if(a==='details')return openDetail(id);if(a==='edit')return openForm(state.view==='staff'?'staff':'asset',id);if(a==='delete'){const kind=state.view==='staff'?'staff':'assets';const item=(kind==='staff'?state.staff:state.assets).find(x=>x.id===id);if(!item)return;if(!confirm(`Permanently delete "${item.name}"? ${kind==='staff'?'All assigned assets will become unassigned. Consider setting status to Relieved instead.':'This cannot be undone without a backup.'}`))return;try{await api(`/api/${kind}/${id}`,{method:'DELETE'});toast('Record deleted');await refresh();}catch(e){toast(e.message);}return;}if(a==='export')return download(state.view);if(a.startsWith('export-'))return download(a.substring(7));if(a==='export-all'){Object.keys(types).filter(k=>k!=='staff').forEach((k,i)=>setTimeout(()=>download(k),i*450));return toast('Downloading asset CSV files (your browser may ask permission).');}if(a==='backup'){window.location.href='/api/backup';return;}if(a==='restore'){$('#restoreFile').click();return;}}
-$('#content').addEventListener('change',async e=>{if(e.target.id!=='restoreFile')return;const file=e.target.files[0];if(!file)return;try{if(file.size>7_000_000)throw Error('Backup file exceeds 7 MB upload limit.');const data=JSON.parse(await file.text());if(!confirm('WARNING: This will REPLACE all staff, assets and EB bills. Download a fresh backup first. Continue?'))return;await api('/api/restore',{method:'POST',body:JSON.stringify(data)});toast('Backup restored successfully');await refresh();}catch(err){toast(err.message);}finally{e.target.value='';}});
-init();
+const staffName=id=>state.staff.find(x=>x.id===id)?.name||'Unassigned';
 
+function getInitials(name){
+  if(!name)return '—';
+  const parts=String(name).trim().split(/\s+/).filter(Boolean);
+  if(!parts.length)return '—';
+  if(parts.length===1)return parts[0].slice(0,2).toUpperCase();
+  return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
+}
 
-// v1.3: Lock the background page whenever any Add/Edit/Details modal is visible.
-(() => {
-  const backdrop = document.getElementById('modalBackdrop');
-  if (!backdrop) return;
-  const syncScrollLock = () => {
-    const isOpen = !backdrop.classList.contains('hidden');
-    document.body.classList.toggle('modal-open', isOpen);
-    document.documentElement.classList.toggle('modal-open', isOpen);
-    if (isOpen) {
-      const body = backdrop.querySelector('.modal-body');
-      if (body) body.scrollTop = 0;
+function photoUrl(collection,id){
+  return '/api/photos/'+collection+'/'+encodeURIComponent(id);
+}
+
+function hasPhoto(collection,id){
+  return !!id&&state.photoKeys.has(collection+':'+id);
+}
+
+function renderStaffCell(s){
+  const photo=hasPhoto('staff',s.id)
+    ?`<img src="${photoUrl('staff',s.id)}" alt="${esc(s.name)}" class="staff-avatar-img" loading="lazy">`
+    :`<span class="staff-avatar-placeholder" title="${esc(s.name)}">${esc(getInitials(s.name))}</span>`;
+  return `<div class="staff-cell">
+    <div class="staff-avatar-wrap">${photo}</div>
+    <div class="staff-cell-info">
+      <strong class="staff-cell-name">${esc(s.name)}</strong>
+      <span class="subcell">${esc(s.employeeId||'No employee ID')}</span>
+    </div>
+  </div>`;
+}
+
+function renderAssetCell(a){
+  const photo=hasPhoto('assets',a.id)
+    ?`<img src="${photoUrl('assets',a.id)}" alt="${esc(a.name)}" class="asset-avatar-img" loading="lazy">`
+    :`<span class="asset-icon-placeholder">${types[a.type]?.icon||'⬡'}</span>`;
+  return `<div class="asset-cell">
+    <div class="asset-avatar-wrap">${photo}</div>
+    <div class="asset-cell-info">
+      <strong class="asset-cell-name">${esc(a.name)}</strong>
+      <span class="subcell">${esc(a.assetTag||'No asset ID')}</span>
+    </div>
+  </div>`;
+}
+
+function renderAssignedStaffCell(staffId){
+  if(!staffId)return `<div class="assigned-cell unassigned"><span class="pill unassigned">Unassigned</span></div>`;
+  const s=state.staff.find(x=>x.id===staffId);
+  if(!s)return `<div class="assigned-cell unassigned"><span class="pill unassigned">Unassigned</span></div>`;
+  const photo=hasPhoto('staff',s.id)
+    ?`<img src="${photoUrl('staff',s.id)}" alt="${esc(s.name)}" class="assigned-avatar-img" loading="lazy">`
+    :`<span class="assigned-avatar-placeholder" title="${esc(s.name)}">${esc(getInitials(s.name))}</span>`;
+  const isRelieved=s.status==='Relieved';
+  return `<div class="assigned-cell">
+    <div class="assigned-avatar-wrap">${photo}</div>
+    <div class="assigned-info">
+      <span class="assigned-name" title="${esc(s.name)}">${esc(s.name)}</span>
+      ${s.employeeId?`<span class="assigned-id">${esc(s.employeeId)}</span>`:''}
+      ${isRelieved?`<span class="subcell text-danger">Relieved – review allocation</span>`:''}
+    </div>
+  </div>`;
+}
+
+function renderEbCell(b){
+  const photo=hasPhoto('ebBills',b.id)
+    ?`<img src="${photoUrl('ebBills',b.id)}" alt="${esc(b.billMonth)}" class="eb-avatar-img" loading="lazy">`
+    :`<span class="eb-icon-placeholder">⚡</span>`;
+  return `<div class="eb-cell">
+    <div class="eb-avatar-wrap">${photo}</div>
+    <div class="eb-cell-info">
+      <strong class="eb-cell-name">${esc(b.billMonth)}</strong>
+      <span class="subcell">${esc(b.location||'NUNES Office')}</span>
+    </div>
+  </div>`;
+}
+
+function photoThumb(collection,id){
+  return hasPhoto(collection,id)
+    ?`<a href="${photoUrl(collection,id)}" target="_blank" rel="noopener" title="View image"><img src="${photoUrl(collection,id)}" alt="Record image" loading="lazy" style="width:38px;height:38px;object-fit:cover;border-radius:8px;vertical-align:middle;border:1px solid #dce7f5;margin-right:8px"></a>`
+    :'';
+}
+
+function photoFields(collection,id){
+  const has=hasPhoto(collection,id);
+  return `<div class="field full"><label for="recordPhoto">${collection==='staff'?'Employee Photo':collection==='ebBills'?'EB Image':'Asset Photo'} (JPG, PNG, WebP · max 1 MB)</label><input id="recordPhoto" type="file" accept="image/jpeg,image/png,image/webp"><img id="photoPreview" alt="Image preview" ${has?`src="${photoUrl(collection,id)}"`:'hidden'} style="max-width:180px;max-height:150px;object-fit:contain;border-radius:8px;margin-top:8px;border:1px solid #dbe6f5">${has?'<label style="margin-top:8px;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="removePhoto" style="width:auto"> Remove existing image on save</label>':''}</div>`;
+}
+
+function wirePhoto(){
+  const input=$('#recordPhoto');
+  if(!input)return;
+  input.onchange=async()=>{
+    const f=input.files[0];
+    if(!f)return;
+    try{
+      await photoPayload();
+      const preview=$('#photoPreview');
+      preview.src='data:'+f.type+';base64,'+await fileToBase64(f);
+      preview.hidden=false;
+      if($('#removePhoto'))$('#removePhoto').checked=false;
+    }catch(e){
+      input.value='';
+      toast(e.message);
     }
   };
-  new MutationObserver(syncScrollLock).observe(backdrop, {attributes:true, attributeFilter:['class']});
-  syncScrollLock();
+}
+
+async function photoPayload(){
+  const file=$('#recordPhoto')?.files?.[0];
+  if(!file)return null;
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>1048576)throw Error('Choose a JPG, PNG or WebP image under 1 MB');
+  return {mime:file.type,base64:await fileToBase64(file)};
+}
+
+async function savePhoto(collection,id,photo,remove){
+  if(photo)await api(photoUrl(collection,id),{method:'POST',body:JSON.stringify(photo)});
+  else if(remove)await api(photoUrl(collection,id),{method:'DELETE'});
+}
+
+function badge(status){
+  const css=(status||'').replace(/\s+/g,'');
+  return `<span class="pill ${esc(css)}">${esc(status||'—')}</span>`;
+}
+
+function staffAssetSummary(id){
+  const found=state.assets.filter(a=>a.assignedStaffId===id);
+  if(!found.length)return '<span class="muted">No assets</span>';
+  const labels={company_mobile:'Mobile',laptop:'Laptop',desktop_cpu:'CPU',vehicle:'Vehicle'};
+  const counts={};
+  found.forEach(a=>{counts[a.type]=(counts[a.type]||0)+1;});
+  return `<strong>${found.length} assigned</strong><span class="subcell">${Object.entries(counts).map(([k,n])=>`${n} ${labels[k]||'Asset'}`).join(' · ')}</span>`;
+}
+
+function navigate(v){
+  state.view=v;
+  state.query='';
+  state.filter='all';
+  render();
+  window.scrollTo(0,0);
+}
+
+document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>navigate(b.dataset.view)));
+
+function render(){
+  const v=state.view;
+  $('#breadcrumb').textContent=v==='dashboard'?'Dashboard':v==='reports'?'Reports & Backup':v==='eb'?'EB Expenses':types[v].title;
+  document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
+  $('#dateNow').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  $('#content').innerHTML=v==='dashboard'?dashboard():v==='reports'?reports():v==='eb'?ebPage():directory(v);
+  wireContent();
+}
+
+function heading(title,sub,actions=''){
+  return `<div class="page-heading"><div><div class="eyebrow">STAFF & ASSET MANAGEMENT</div><h1>${esc(title)}</h1><p>${esc(sub)}</p></div><div class="head-actions">${actions}</div></div>`;
+}
+
+const btn=(label,action,extra='')=>`<button class="btn ${extra}" data-action="${action}">${label}</button>`;
+
+function metric(label,n,icon,foot=''){
+  return `<div class="kpi"><div class="kpi-head"><span>${esc(label)}</span><span class="kpi-icon">${icon}</span></div><div class="kpi-value">${n}</div><div class="kpi-foot">${foot}</div></div>`;
+}
+
+function dashboard(){
+  const o=state.overview||{staffTotal:0,active:0,relieved:0,counts:{},activity:[],unassigned:0};
+  const total=state.assets.length;
+  return heading('Good day, Administrator 👋','Staff, assets and NUNES office electricity expenses in one place.',btn('+ Add Staff','add-staff','primary')+btn('+ Add Asset','add-asset'))
+    +`<div class="kpi-grid">
+      ${metric('Total Staff',o.staffTotal,'♙',`<strong>${o.active}</strong> currently active`)}
+      ${metric('Company Mobiles',o.counts.company_mobile||0,'▯','Registered devices')}
+      ${metric('Laptops & Desktop CPUs',(o.counts.laptop||0)+(o.counts.desktop_cpu||0),'▤','Company computers')}
+      ${metric('Staff Vehicles',o.counts.vehicle||0,'◇','Registered vehicles')}
+    </div>
+    <div class="eb-dashboard-strip">
+      <div><strong>⚡ NUNES Electricity Expenses</strong><small>Pending bills: ${state.ebSummary?.pending||0} · This month: ₹${money(state.ebSummary?.currentMonthTotal||0)}</small></div>
+      ${btn('Open EB Expenses →','go-eb')}
+    </div>
+    <div class="two-col">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Asset Overview</h2><p>Inventory distribution across categories</p></div><button class="link-btn" data-action="go-reports">Reports →</button></div>
+        <div class="category-list">
+          ${Object.keys(types).filter(k=>k!=='staff').map(k=>{
+            const n=o.counts[k]||0;
+            return `<div class="category-row"><div class="category-icon">${types[k].icon}</div><div class="category-info">${types[k].title}</div><div class="bar-bg"><div class="bar-fill" style="width:${total?Math.max(2,n/total*100):0}%"></div></div><div class="category-num">${n}</div></div>`;
+          }).join('')}
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Recent Activity</h2><p>Your latest updates across the workspace</p></div></div>
+        <div class="activity-list">
+          ${o.activity.length?o.activity.map(x=>`<div class="activity-row"><div class="activity-mark">↗</div><div><strong>${esc(x.action)} · ${esc(x.label)}</strong><small>${niceDate(x.date)}</small></div></div>`).join(''):`<div class="empty-state"><div class="empty-icon">↗</div><h3>No activity yet</h3><p>Your updates will appear here.</p></div>`}
+        </div>
+      </section>
+    </div>
+    <div class="section-hint"><span style="font-size:20px">ⓘ</span><span><b>People status:</b> ${o.active} active · ${o.onLeave||0} on leave · ${o.relieved} relieved. ${o.unassigned} non-vehicle assets are currently unassigned.</span></div>`;
+}
+
+function rows(v,items){
+  if(v==='staff'){
+    return items.map(x=>`<tr>
+      <td class="primary-cell">${renderStaffCell(x)}</td>
+      <td>${esc(x.department||'—')}</td>
+      <td>${esc(x.designation||'—')}</td>
+      <td>${esc(x.phone||'—')}</td>
+      <td>${badge(x.status)}</td>
+      <td>${staffAssetSummary(x.id)}</td>
+      <td><div class="row-actions"><button class="action view-btn" data-action="details" data-id="${x.id}" title="View staff member details">View</button><button class="action edit-btn" data-action="edit" data-id="${x.id}" title="Edit staff member">Edit</button><button class="action delete-btn delete" data-action="delete" data-id="${x.id}" title="Delete record">Delete</button></div></td>
+    </tr>`).join('');
+  }
+  return items.map(x=>`<tr>
+    <td class="primary-cell">${renderAssetCell(x)}</td>
+    <td>${esc(x.brand||'—')} ${esc(x.model||'')}</td>
+    <td>${esc(x.type==='company_mobile'?(x.phone||x.serial||'—'):x.type==='vehicle'?(x.registration||'—'):(x.serial||'—'))}</td>
+    <td>${renderAssignedStaffCell(x.assignedStaffId)}</td>
+    <td>${badge(x.condition)}</td>
+    <td><div class="row-actions"><button class="action view-btn" data-action="asset-view" data-id="${x.id}" title="View asset details">View</button><button class="action edit-btn" data-action="edit" data-id="${x.id}" title="Edit asset">Edit</button><button class="action delete-btn delete" data-action="delete" data-id="${x.id}" title="Delete asset">Delete</button></div></td>
+  </tr>`).join('');
+}
+
+function directory(v){
+  const t=types[v];
+  const all=v==='staff'?state.staff:state.assets.filter(a=>a.type===v);
+  let items=all.filter(x=>{
+    const searchable=Object.values(x).join(' ').toLowerCase()+' '+(v==='staff'?'':staffName(x.assignedStaffId).toLowerCase());
+    return searchable.includes(state.query.toLowerCase())&&(state.filter==='all'||(v==='eb'?(state.filter==='Overdue'?x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10):x.status===state.filter):v==='staff'?x.status===state.filter:x.condition===state.filter));
+  });
+  const cols=v==='staff'
+    ?['Employee','Department','Designation','Phone','Status','Assets','Actions']
+    :['Asset','Brand / Model',v==='company_mobile'?'Mobile / IMEI':v==='vehicle'?'Registration':'Serial Number','Assigned To','Condition','Actions'];
+  const options=v==='staff'?['Active','On Leave','Relieved']:['Good','Needs Repair','Under Repair','Retired'];
+  return heading(t.title,t.sub,btn('↓ Export CSV','export')+btn('+ Add '+t.singular,'add-current','primary'))
+    +`<section class="panel">
+      <div class="panel-head"><div><h2>${esc(t.title)} <span style="color:#9faabd;font-weight:500">(${all.length})</span></h2><p>Search, update and organize your records</p></div></div>
+      <div class="table-tools">
+        <input class="search" id="search" placeholder="Search by name, code, model or contact..." value="${esc(state.query)}" aria-label="Search records">
+        <select class="filter" id="filter"><option value="all">All statuses</option>${options.map(o=>`<option value="${esc(o)}" ${state.filter===o?'selected':''}>${esc(o)}</option>`).join('')}</select>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead><tbody id="tableRows">${rows(v,items)}</tbody></table>
+        ${items.length?'':`<div class="empty-state"><div class="empty-icon">${t.icon}</div><h3>${all.length?'No matches found':'No records yet'}</h3><p>${all.length?'Try a different search or filter.':'Get started by adding your first '+t.singular.toLowerCase()+'.'}</p>${!all.length?btn('+ Add '+t.singular,'add-current','primary'):''}</div>`}
+      </div>
+      <div class="count-foot">Showing ${items.length} of ${all.length} records</div>
+    </section>`;
+}
+
+function reports(){
+  return heading('Reports & Backup','Export your records or securely save a copy of your data.')
+    +`<div class="report-grid">
+      <div class="report-card"><div class="report-icon">♙</div><h3>Staff Report</h3><p>Download employees, departments, contacts and current / relieved statuses.</p>${btn('↓ Download Staff CSV','export-staff')}</div>
+      <div class="report-card"><div class="report-icon">▤</div><h3>Asset Reports</h3><p>Download mobiles, laptops, CPUs and vehicles in separate Excel-compatible files.</p>${btn('↓ Download All Asset CSVs','export-all')}</div>
+      <div class="report-card"><div class="report-icon">⬡</div><h3>Full Backup</h3><p>Save staff, inventory, EB bills, attachments and activity to JSON.</p>${btn('↓ Download Backup','backup','primary')}</div>
+    </div>
+    <section class="panel"><div class="panel-head"><div><h2>Download Individual Reports</h2><p>Select one inventory category for its own CSV</p></div></div><div class="report-list">${Object.keys(types).map(k=>btn('↓ '+types[k].title,'export-'+k)).join('')}</div></section>
+    <section class="panel" style="margin-top:20px"><div class="panel-head"><div><h2>EB Monthly Expense Report</h2><p>Electricity bill and payment records (Excel-compatible CSV)</p></div>${btn('↓ Download EB CSV','export-eb')}</div></section>
+    <section class="panel" style="margin-top:20px"><div class="panel-head"><div><h2>Restore a Backup</h2><p>Import a previously downloaded NUNES JSON backup.</p></div><button class="btn danger" data-action="restore">↑ Restore from JSON</button></div><div class="section-hint" style="margin:0 23px 23px">⚠ Restoring a backup replaces all current staff and asset records. Download your current backup before restoring.</div><input id="restoreFile" type="file" accept=".json,application/json" class="hidden"></section>`;
+}
+
+const field=(key,label,kind='text',required=false,options=null,full=false)=>({key,label,kind,required,options,full});
+const staffFields=[
+  field('employeeId','Employee ID / Staff Code'),
+  field('name','Full Name','text',true),
+  field('department','Department'),
+  field('designation','Job Title / Designation'),
+  field('phone','Contact Number','tel'),
+  field('email','Email Address','email'),
+  field('joinDate','Joining Date','date'),
+  field('status','Employment Status','select',true,['Active','On Leave','Relieved']),
+  field('relievedDate','Relieved Date','date'),
+  field('notes','Notes / Remarks','textarea',false,null,true)
+];
+
+const assetFields=[
+  field('type','Asset Category','select',true,Object.keys(types).filter(x=>x!=='staff')),
+  field('assetTag','Asset ID / Inventory Code'),
+  field('name','Item Name','text',true),
+  field('brand','Brand'),
+  field('model','Model'),
+  field('serial','Serial Number / IMEI'),
+  field('phone','Mobile / SIM Number','tel'),
+  field('simProvider','SIM Network / Provider'),
+  field('registration','Vehicle Registration Number'),
+  field('ownership','Vehicle Ownership','select',false,['','Personal','Company']),
+  field('purchaseDate','Purchase / Registration Date','date'),
+  field('condition','Condition','select',false,['Good','Needs Repair','Under Repair','Retired']),
+  field('assignmentStatus','Assignment Status','select',false,['Unassigned','Assigned']),
+  field('assignedStaffId','Staff Name','staff'),
+  field('notes','Notes / Remarks','textarea',false,null,true)
+];
+
+function openForm(kind,id=null){
+  closeDetailModal();
+  state.kind=kind;
+  state.editing=id;
+  const item=id?(kind==='staff'?state.staff:state.assets).find(x=>x.id===id):{};
+  if(id&&!item)return toast('Record no longer exists');
+  $('#modalTitle').textContent=(id?'Edit ':'Add ')+(kind==='staff'?'Staff Member':'Asset');
+  $('#modalSave').classList.remove('hidden');
+  $('#modalSave').textContent='Save record →';
+  const formFields=kind==='staff'?staffFields:assetFields;
+  $('#formFields').innerHTML=formFields.map(f=>{
+    let v=(f.key==='assignmentStatus'?(item.assignedStaffId?'Assigned':'Unassigned'):item[f.key])??(f.key==='type'?state.view!=='dashboard'&&state.view!=='reports'&&state.view!=='staff'?state.view:'company_mobile':f.key==='status'?'Active':f.key==='condition'?'Good':'');
+    let el=f.kind==='select'
+      ?`<select name="${f.key}" id="f_${f.key}">${f.options.map(x=>{const val=f.key==='type'?(types[x]?.title||x):x;return `<option value="${esc(x)}" ${v===x?'selected':''}>${esc(val||'Select...')}</option>`;}).join('')}</select>`
+      :f.kind==='staff'
+      ?`<select name="${f.key}" id="f_${f.key}"><option value="">Select staff member</option>${state.staff.map(s=>`<option value="${s.id}" ${v===s.id?'selected':''}>${esc(s.name)}${s.status==='Relieved'?' (Relieved)':''}</option>`).join('')}</select>`
+      :f.kind==='textarea'
+      ?`<textarea name="${f.key}" id="f_${f.key}" placeholder="Optional details">${esc(v)}</textarea>`
+      :`<input name="${f.key}" id="f_${f.key}" type="${f.kind}" value="${esc(v)}" ${f.required?'required':''} placeholder="${esc(f.label)}">`;
+    return `<div class="field ${f.full?'full':''}" data-field="${f.key}"><label for="f_${f.key}">${f.label}${f.required?' *':''}</label>${el}</div>`;
+  }).join('')+photoFields(kind==='staff'?'staff':'assets',id);
+  wirePhoto();
+  $('#formError').classList.add('hidden');
+  $('#modalBackdrop').classList.remove('hidden');
+
+  const update=()=>{
+    if(kind==='staff'){
+      $('[data-field="relievedDate"]').style.display=$('#f_status').value==='Relieved'?'':'none';
+    }else{
+      const t=$('#f_type').value;
+      const show={phone:t==='company_mobile',simProvider:t==='company_mobile',registration:t==='vehicle',ownership:t==='vehicle'};
+      Object.keys(show).forEach(k=>{$(`[data-field="${k}"]`).style.display=show[k]?'':'none';});
+      const assigning=['company_mobile','laptop','desktop_cpu'].includes(t);
+      $('[data-field="assignmentStatus"]').style.display=assigning?'':'none';
+      if(assigning){
+        const selected=$('#f_assignmentStatus').value==='Assigned';
+        $('[data-field="assignedStaffId"]').style.display=selected?'':'none';
+        $('#f_assignedStaffId').required=selected;
+        if(!selected)$('#f_assignedStaffId').value='';
+      }else{
+        $('[data-field="assignedStaffId"]').style.display='';
+        $('#f_assignedStaffId').required=false;
+      }
+    }
+  };
+  $('#f_status')?.addEventListener('change',update);
+  $('#f_type')?.addEventListener('change',update);
+  $('#f_assignmentStatus')?.addEventListener('change',update);
+  update();
+  $('#f_name')?.focus();
+}
+
+function closeModal(){
+  $('#modalBackdrop').classList.add('hidden');
+  state.editing=null;
+  $('#modalSave').classList.remove('hidden');
+}
+
+function closeDetailModal(){
+  $('#detailModalBackdrop')?.classList.add('hidden');
+  detailState={kind:null,id:null};
+}
+
+$('#modalClose').onclick=closeModal;
+$('#modalCancel').onclick=closeModal;
+$('#modalBackdrop').addEventListener('click',e=>{if(e.target===$('#modalBackdrop'))closeModal();});
+
+$('#detailModalClose')?.addEventListener('click',closeDetailModal);
+$('#detailModalCloseBtn')?.addEventListener('click',closeDetailModal);
+$('#detailModalBackdrop')?.addEventListener('click',e=>{if(e.target===$('#detailModalBackdrop'))closeDetailModal();});
+
+$('#detailModalEditBtn')?.addEventListener('click',()=>{
+  const {kind,id}=detailState;
+  closeDetailModal();
+  if(!kind||!id)return;
+  if(kind==='staff')openForm('staff',id);
+  else if(kind==='asset')openForm('asset',id);
+  else if(kind==='eb')openEb(id);
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(!$('#modalBackdrop').classList.contains('hidden'))closeModal();
+    if($('#detailModalBackdrop')&&!$('#detailModalBackdrop').classList.contains('hidden'))closeDetailModal();
+  }
+});
+
+$('#recordForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const b=$('#modalSave');
+  const payload=Object.fromEntries(new FormData(e.currentTarget).entries());
+  if(state.kind==='eb'){
+    const file=$('#ebFile')?.files?.[0];
+    b.disabled=true;
+    try{
+      const photo=await photoPayload(),remove=$('#removePhoto')?.checked;
+      const method=state.editing?'PUT':'POST';
+      const item=await api('/api/eb/bills'+(state.editing?'/'+state.editing:''),{method,body:JSON.stringify(payload)});
+      state.editing=item.item.id;
+      await savePhoto('ebBills',item.item.id,photo,remove);
+      if(file){
+        if(file.size>1024*1024)throw Error('Max bill attachment 1 MB. Bill details were saved, but file was not uploaded.');
+        const base64=await fileToBase64(file);
+        await api('/api/eb/attachment/'+item.item.id,{method:'POST',body:JSON.stringify({name:file.name,mime:file.type,base64})});
+      }
+      closeModal();
+      toast('EB bill saved');
+      await refresh();
+    }catch(err){
+      $('#formError').textContent=err.message;
+      $('#formError').classList.remove('hidden');
+    }finally{
+      b.disabled=false;
+    }
+    return;
+  }
+  const isStaff=state.kind==='staff';
+  if(!isStaff){
+    const assignStatus=payload.assignmentStatus;
+    delete payload.assignmentStatus;
+    if(['company_mobile','laptop','desktop_cpu'].includes(payload.type)){
+      if(assignStatus==='Assigned'&&!payload.assignedStaffId){
+        $('#formError').textContent='Please select a staff member from Staff Directory first.';
+        $('#formError').classList.remove('hidden');
+        return;
+      }
+      if(assignStatus!=='Assigned')payload.assignedStaffId='';
+    }
+    const t=payload.type;
+    if(t!=='company_mobile'){payload.phone='';payload.simProvider='';}
+    if(t!=='vehicle'){payload.registration='';payload.ownership='';}
+  }
+  const route=isStaff?'/api/staff':'/api/assets';
+  b.disabled=true;
+  try{
+    const photo=await photoPayload(),remove=$('#removePhoto')?.checked;
+    const result=await api(route+(state.editing?'/'+state.editing:''),{method:state.editing?'PUT':'POST',body:JSON.stringify(payload)});
+    state.editing=result.item.id;
+    await savePhoto(isStaff?'staff':'assets',result.item.id,photo,remove);
+    closeModal();
+    toast('Record saved successfully');
+    await refresh();
+  }catch(err){
+    $('#formError').textContent=err.message;
+    $('#formError').classList.remove('hidden');
+  }finally{
+    b.disabled=false;
+  }
+});
+
+function openDetail(id){
+  const s=state.staff.find(x=>x.id===id);
+  if(!s)return toast('Staff member not found');
+  detailState={kind:'staff',id:s.id};
+  $('#detailModalEyebrow').textContent='STAFF PROFILE · NUNES INSTRUMENTS';
+  $('#detailModalTitle').textContent=s.name;
+  $('#detailModalBadge').innerHTML=badge(s.status);
+  $('#detailModalEditBtn').textContent='Edit Staff Member →';
+
+  const assets=state.assets.filter(a=>a.assignedStaffId===s.id);
+  const heroPhoto=hasPhoto('staff',s.id)
+    ?`<a href="${photoUrl('staff',s.id)}" target="_blank" rel="noopener" class="detail-hero-photo-wrap" title="View original photo"><img src="${photoUrl('staff',s.id)}" alt="${esc(s.name)}" class="detail-hero-photo"></a>`
+    :`<div class="detail-hero-photo-wrap"><div class="detail-hero-placeholder">${esc(getInitials(s.name))}</div></div>`;
+
+  const props=[
+    ['Employee ID',s.employeeId||'Not assigned'],
+    ['Full Name',s.name],
+    ['Department',s.department||'—'],
+    ['Designation / Title',s.designation||'—'],
+    ['Phone Number',s.phone?`<a href="tel:${esc(s.phone)}">${esc(s.phone)}</a>`:'—'],
+    ['Email Address',s.email?`<a href="mailto:${esc(s.email)}">${esc(s.email)}</a>`:'—'],
+    ['Joining Date',niceDate(s.joinDate)],
+    ['Relieved Date',s.relievedDate?niceDate(s.relievedDate):'—'],
+    ['Current Status',s.status]
+  ];
+
+  let assetsHtml='';
+  if(assets.length){
+    assetsHtml=`<div class="detail-assets-grid">${assets.map(a=>{
+      const aThumb=hasPhoto('assets',a.id)
+        ?`<img src="${photoUrl('assets',a.id)}" alt="${esc(a.name)}" class="detail-asset-thumb" loading="lazy">`
+        :`<div class="detail-asset-icon">${types[a.type]?.icon||'⬡'}</div>`;
+      return `<div class="detail-asset-card">
+        ${aThumb}
+        <div class="detail-asset-info">
+          <strong>${esc(a.name)}</strong>
+          <span class="subcell">${esc(types[a.type]?.title||a.type)} · ${esc(a.assetTag||'No ID')}</span>
+          ${a.phone?`<span class="subcell">SIM: ${esc(a.phone)}</span>`:''}
+          ${a.registration?`<span class="subcell">Reg: ${esc(a.registration)}</span>`:''}
+        </div>
+        <div>${badge(a.condition)}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }else{
+    assetsHtml=`<div class="detail-empty-box"><p>No company devices or vehicles currently assigned to this employee.</p></div>`;
+  }
+
+  $('#detailModalBody').innerHTML=`
+    <div class="detail-hero">
+      ${heroPhoto}
+      <div class="detail-hero-info">
+        <h3>${esc(s.name)}</h3>
+        <p class="detail-hero-sub">${esc(s.designation||'Staff Member')}${s.department?' · '+esc(s.department):''}</p>
+        <span class="detail-hero-meta">Employee ID: <strong>${esc(s.employeeId||'None')}</strong></span>
+      </div>
+    </div>
+    <div class="detail-grid">
+      ${props.map(([k,v])=>`<div class="detail-item"><label>${esc(k)}</label><div class="value">${v}</div></div>`).join('')}
+    </div>
+    ${s.notes?`<div class="detail-notes-card"><label>Notes & Address</label><p>${esc(s.notes)}</p></div>`:''}
+    <div class="detail-section-title">
+      <span>Assigned Devices & Vehicles (${assets.length})</span>
+      <span style="font-size:11px;color:#899ab2;font-weight:600">Company property assigned to this staff member</span>
+    </div>
+    ${assetsHtml}
+  `;
+
+  $('#detailModalBackdrop').classList.remove('hidden');
+}
+
+function openAssetDetail(id){
+  const a=state.assets.find(x=>x.id===id);
+  if(!a)return toast('Asset not found');
+  detailState={kind:'asset',id:a.id};
+  const typeTitle=types[a.type]?.title||'Asset';
+  $('#detailModalEyebrow').textContent=`ASSET RECORD · ${typeTitle.toUpperCase()}`;
+  $('#detailModalTitle').textContent=a.name;
+  $('#detailModalBadge').innerHTML=badge(a.condition);
+  $('#detailModalEditBtn').textContent='Edit Asset →';
+
+  const heroPhoto=hasPhoto('assets',a.id)
+    ?`<a href="${photoUrl('assets',a.id)}" target="_blank" rel="noopener" class="detail-hero-photo-wrap" title="View original photo"><img src="${photoUrl('assets',a.id)}" alt="${esc(a.name)}" class="detail-hero-photo"></a>`
+    :`<div class="detail-hero-photo-wrap"><div class="detail-hero-placeholder asset-placeholder">${types[a.type]?.icon||'⬡'}</div></div>`;
+
+  const props=[
+    ['Asset Category',typeTitle],
+    ['Asset ID / Code',a.assetTag||'Not assigned'],
+    ['Brand',a.brand||'—'],
+    ['Model',a.model||'—'],
+    ['Serial / IMEI',a.serial||'—']
+  ];
+  if(a.type==='company_mobile'){
+    props.push(['Mobile / SIM Number',a.phone?`<a href="tel:${esc(a.phone)}">${esc(a.phone)}</a>`:'—']);
+    props.push(['SIM Provider',a.simProvider||'—']);
+  }
+  if(a.type==='vehicle'){
+    props.push(['Registration Number',a.registration||'—']);
+    props.push(['Ownership',a.ownership||'—']);
+  }
+  props.push(['Purchase / Reg. Date',niceDate(a.purchaseDate)]);
+  props.push(['Physical Condition',a.condition]);
+
+  let staffCardHtml='';
+  if(a.assignedStaffId){
+    const s=state.staff.find(x=>x.id===a.assignedStaffId);
+    if(s){
+      const sPhoto=hasPhoto('staff',s.id)
+        ?`<img src="${photoUrl('staff',s.id)}" alt="${esc(s.name)}" class="detail-assigned-avatar" loading="lazy">`
+        :`<div class="detail-assigned-placeholder">${esc(getInitials(s.name))}</div>`;
+      staffCardHtml=`
+        <div class="detail-assigned-person">
+          ${sPhoto}
+          <div class="detail-assigned-meta">
+            <strong>${esc(s.name)}</strong>
+            <span>${esc(s.designation||'Staff')}${s.department?' · '+esc(s.department):''} ${s.employeeId?'(ID: '+esc(s.employeeId)+')':''}</span>
+            ${s.phone?`<span>Phone: <a href="tel:${esc(s.phone)}">${esc(s.phone)}</a></span>`:''}
+            ${s.status==='Relieved'?'<span class="subcell text-danger">Employee status is Relieved — allocation should be reviewed</span>':''}
+          </div>
+          <div>${badge(s.status)}</div>
+        </div>`;
+    }else{
+      staffCardHtml=`<div class="detail-empty-box"><p class="muted">Assigned staff record ID was not found in directory.</p></div>`;
+    }
+  }else{
+    staffCardHtml=`<div class="detail-empty-box"><p class="muted">This asset is currently <strong>Unassigned</strong> and available in office inventory.</p></div>`;
+  }
+
+  $('#detailModalBody').innerHTML=`
+    <div class="detail-hero">
+      ${heroPhoto}
+      <div class="detail-hero-info">
+        <h3>${esc(a.name)}</h3>
+        <p class="detail-hero-sub">${esc(a.brand||'')} ${esc(a.model||'')}</p>
+        <span class="detail-hero-meta">Asset ID: <strong>${esc(a.assetTag||'None')}</strong></span>
+      </div>
+    </div>
+    <div class="detail-grid">
+      ${props.map(([k,v])=>`<div class="detail-item"><label>${esc(k)}</label><div class="value">${v}</div></div>`).join('')}
+    </div>
+    ${a.notes?`<div class="detail-notes-card"><label>Notes & Details</label><p>${esc(a.notes)}</p></div>`:''}
+    <div class="detail-section-title">
+      <span>Currently Assigned Employee</span>
+      <span style="font-size:11px;color:#899ab2;font-weight:600">Employee custody & usage</span>
+    </div>
+    ${staffCardHtml}
+  `;
+
+  $('#detailModalBackdrop').classList.remove('hidden');
+}
+
+function openEbDetail(id){
+  const b=state.ebBills.find(x=>x.id===id);
+  if(!b)return toast('EB bill not found');
+  detailState={kind:'eb',id:b.id};
+  const overdue=b.status==='Pending'&&b.dueDate&&b.dueDate<new Date().toISOString().slice(0,10);
+  $('#detailModalEyebrow').textContent='ELECTRICITY BILL · NUNES INSTRUMENTS';
+  $('#detailModalTitle').textContent=`Bill Month: ${b.billMonth}`;
+  $('#detailModalBadge').innerHTML=badge(overdue?'Overdue':b.status);
+  $('#detailModalEditBtn').textContent='Edit EB Bill →';
+
+  const heroPhoto=hasPhoto('ebBills',b.id)
+    ?`<a href="${photoUrl('ebBills',b.id)}" target="_blank" rel="noopener" class="detail-hero-photo-wrap" title="View attached receipt image"><img src="${photoUrl('ebBills',b.id)}" alt="EB Bill" class="detail-hero-photo"></a>`
+    :`<div class="detail-hero-photo-wrap"><div class="detail-hero-placeholder" style="background:#f59e0b">⚡</div></div>`;
+
+  const props=[
+    ['Office / Location',b.location||'NUNES Office'],
+    ['EB Service Number',b.serviceNumber],
+    ['Consumer Name',b.consumerName||'NUNES Instruments'],
+    ['Meter Number',b.meterNumber||'—'],
+    ['Connection Type',b.connectionType||'—'],
+    ['Bill Month',b.billMonth],
+    ['Previous Reading',b.previousReading||'—'],
+    ['Current Reading',b.currentReading||'—'],
+    ['Units Consumed',b.units||'—'],
+    ['Total Amount',`₹${money(b.amount)}`],
+    ['Due Date',niceDate(b.dueDate)],
+    ['Payment Status',overdue?'Overdue':b.status],
+    ['Payment Date',niceDate(b.paymentDate)],
+    ['Payment Method',b.paymentMethod||'—'],
+    ['Transaction ID / UTR',b.transactionId||'—']
+  ];
+
+  $('#detailModalBody').innerHTML=`
+    <div class="detail-hero">
+      ${heroPhoto}
+      <div class="detail-hero-info">
+        <h3>₹${money(b.amount)}</h3>
+        <p class="detail-hero-sub">${esc(b.location||'NUNES Office')} · Service No: ${esc(b.serviceNumber)}</p>
+        <span class="detail-hero-meta">Bill Month: <strong>${esc(b.billMonth)}</strong></span>
+      </div>
+    </div>
+    <div class="detail-grid">
+      ${props.map(([k,v])=>`<div class="detail-item"><label>${esc(k)}</label><div class="value">${v}</div></div>`).join('')}
+    </div>
+    ${b.hasAttachment?`<div style="margin-bottom:18px"><button class="btn primary" type="button" data-action="eb-download" data-id="${b.id}">↓ Download Original Bill Receipt</button></div>`:''}
+    ${b.notes?`<div class="detail-notes-card"><label>Remarks & Notes</label><p>${esc(b.notes)}</p></div>`:''}
+  `;
+
+  $('#detailModalBody').querySelectorAll('[data-action="eb-download"]').forEach(btn=>{
+    btn.onclick=()=>action('eb-download',b.id);
+  });
+
+  $('#detailModalBackdrop').classList.remove('hidden');
+}
+
+const ebFields=[
+  field('location','Office / Location','text',true),
+  field('serviceNumber','EB Service Number','text',true),
+  field('consumerName','Consumer Name'),
+  field('meterNumber','Meter Number'),
+  field('connectionType','Connection Type','select',false,['Commercial','Industrial','Domestic','Other']),
+  field('billMonth','Bill Month','month',true),
+  field('previousReading','Previous Reading','number'),
+  field('currentReading','Current Reading','number'),
+  field('units','Units Consumed','number'),
+  field('amount','Bill Amount (₹)','number',true),
+  field('dueDate','Due Date','date'),
+  field('status','Payment Status','select',true,['Pending','Paid']),
+  field('paymentDate','Payment Date','date'),
+  field('paymentMethod','Payment Method','select',false,['','UPI','Bank Transfer','Cash','Cheque','Card','Other']),
+  field('transactionId','Payment Reference / UTR'),
+  field('notes','Remarks','textarea',false,null,true)
+];
+
+function ebPage(){
+  const summary=state.ebSummary||{connections:0,bills:0,currentMonthTotal:0,yearTotal:0,pending:0,pendingAmount:0,overdue:0};
+  const all=state.ebBills;
+  const items=all.filter(x=>Object.values(x).join(' ').toLowerCase().includes(state.query.toLowerCase())&&(state.filter==='all'||(state.filter==='Overdue'?(x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10)):x.status===state.filter))).sort((a,b)=>b.billMonth.localeCompare(a.billMonth));
+  return heading('EB Expense Management','NUNES Instruments · Office electricity connections, monthly bills and payments.',btn('↓ EB Report CSV','export-eb')+btn('+ Add EB Bill','add-eb','primary'))
+    +`<div class="kpi-grid">
+      ${metric('EB Connections',summary.connections,'⚡','Unique service numbers')}
+      ${metric('This Month Bill','₹'+money(summary.currentMonthTotal),'₹','Entered current-month bills')}
+      ${metric('Yearly Expense','₹'+money(summary.yearTotal),'▥','Current calendar year')}
+      ${metric('Pending Bills',summary.pending,'◷','₹'+money(summary.pendingAmount)+' unpaid · '+summary.overdue+' overdue')}
+    </div>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Electricity Bill Register <span style="color:#9faabd;font-weight:500">(${all.length})</span></h2><p>Office service number, bill month, paid / pending, due dates and receipts</p></div></div>
+      <div class="table-tools">
+        <input class="search" id="search" placeholder="Search month, service number, location..." value="${esc(state.query)}">
+        <select class="filter" id="filter"><option value="all">All payments</option>${['Paid','Pending','Overdue'].map(s=>`<option value="${s}" ${state.filter===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+      <div class="table-scroll">
+        <table class="data-table"><thead><tr>${['Month','Location / Service No.','Units','Amount','Due Date','Payment','Bill File','Actions'].map(t=>`<th>${t}</th>`).join('')}</tr></thead><tbody id="tableRows">${ebRows(items)}</tbody></table>
+        ${!all.length?`<div class="empty-state"><div class="empty-icon">⚡</div><h3>No EB bills yet</h3><p>Add the first NUNES electricity bill to start tracking expenses.</p>${btn('+ Add First EB Bill','add-eb','primary')}</div>`:''}
+      </div>
+      <div class="count-foot">Showing ${items.length} of ${all.length} bills</div>
+    </section>
+    <div class="wide-note">For multiple EB service numbers at the same NUNES location, enter each connection separately. Only bills you enter are reflected in totals. Original bill files are stored inside the local protected backup (maximum 1 MB per file).</div>`;
+}
+
+function ebRows(items){
+  return items.map(x=>{
+    const overdue=x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10);
+    return `<tr>
+      <td class="primary-cell">${renderEbCell(x)}</td>
+      <td>${esc(x.location)}<span class="subcell">${esc(x.serviceNumber)}</span></td>
+      <td>${esc(x.units||'—')}</td>
+      <td class="primary-cell">₹${money(x.amount)}</td>
+      <td>${niceDate(x.dueDate)}</td>
+      <td>${badge(overdue?'Overdue':x.status)}</td>
+      <td>${x.hasAttachment?`<button class="action" data-action="eb-download" data-id="${x.id}">↓ Bill File</button>`:'—'}</td>
+      <td><div class="row-actions"><button class="action view-btn" data-action="eb-view" data-id="${x.id}" title="View electricity bill details">View</button><button class="action edit-btn" data-action="eb-edit" data-id="${x.id}" title="Edit electricity bill">Edit</button><button class="action delete-btn delete" data-action="eb-delete" data-id="${x.id}" title="Delete record">Delete</button></div></td>
+    </tr>`;
+  }).join('');
+}
+
+function openEb(id=null){
+  closeDetailModal();
+  state.kind='eb';
+  state.editing=id;
+  const x=state.ebBills.find(b=>b.id===id)||{};
+  if(id&&!x)return toast('EB bill no longer exists');
+  $('#modalTitle').textContent=id?'Edit EB Bill':'Add EB Bill';
+  $('#modalSave').classList.remove('hidden');
+  $('#modalSave').textContent='Save EB bill →';
+  $('#formFields').innerHTML=ebFields.map(f=>{
+    const val=x[f.key]??(f.key==='location'?'NUNES Office':f.key==='consumerName'?'NUNES Instruments':f.key==='status'?'Pending':f.key==='billMonth'?new Date().toISOString().slice(0,7):'');
+    const input=f.kind==='select'
+      ?`<select id="f_${f.key}" name="${f.key}">${f.options.map(v=>`<option value="${esc(v)}" ${val===v?'selected':''}>${esc(v||'Select...')}</option>`).join('')}</select>`
+      :f.kind==='textarea'
+      ?`<textarea name="${f.key}" id="f_${f.key}">${esc(val)}</textarea>`
+      :`<input name="${f.key}" id="f_${f.key}" type="${f.kind}" ${f.kind==='number'?'step="0.01" min="0"':''} value="${esc(val)}" ${f.required?'required':''}>`;
+    return `<div class="field ${f.full?'full':''}"><label for="f_${f.key}">${esc(f.label)}${f.required?' *':''}</label>${input}</div>`;
+  }).join('')+`<div class="field full"><label for="ebFile">EB Bill Receipt (PDF, JPG, PNG · max 1 MB)</label><input id="ebFile" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg">${x.hasAttachment?`<small class="muted" style="display:block;margin-top:6px">Current attachment saved. Upload another to replace it.</small>`:''}</div>`+photoFields('ebBills',id);
+  wirePhoto();
+  $('#formError').classList.add('hidden');
+  $('#modalBackdrop').classList.remove('hidden');
+  $('#f_serviceNumber')?.focus();
+}
+
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result).split(',')[1]);
+    reader.onerror=()=>reject(Error('Unable to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function download(type){
+  window.location.href='/api/export?type='+encodeURIComponent(type);
+}
+
+function wireContent(){
+  const search=$('#search'),filter=$('#filter');
+  if(search)search.addEventListener('input',e=>{state.query=e.target.value;updateRows();});
+  if(filter)filter.addEventListener('change',e=>{state.filter=e.target.value;updateRows();});
+  $('#content').querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>action(b.dataset.action,b.dataset.id)));
+}
+
+function updateRows(){
+  const v=state.view,all=v==='eb'?state.ebBills:v==='staff'?state.staff:state.assets.filter(a=>a.type===v);
+  const items=all.filter(x=>(Object.values(x).join(' ')+' '+staffName(x.assignedStaffId)).toLowerCase().includes(state.query.toLowerCase())&&(state.filter==='all'||(v==='eb'?(state.filter==='Overdue'?x.status==='Pending'&&x.dueDate&&x.dueDate<new Date().toISOString().slice(0,10):x.status===state.filter):v==='staff'?x.status===state.filter:x.condition===state.filter)));
+  const body=$('#tableRows');
+  if(body){
+    body.innerHTML=v==='eb'?ebRows(items.sort((a,b)=>b.billMonth.localeCompare(a.billMonth))):rows(v,items);
+    body.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>action(b.dataset.action,b.dataset.id)));
+  }
+  const foot=$('.count-foot');
+  if(foot)foot.textContent=`Showing ${items.length} of ${all.length} records`;
+}
+
+async function action(a,id){
+  if(a==='go-eb')return navigate('eb');
+  if(a==='add-eb')return openEb();
+  if(a==='eb-edit')return openEb(id);
+  if(a==='eb-view')return openEbDetail(id);
+  if(a==='asset-view')return openAssetDetail(id);
+  if(a==='details')return openDetail(id);
+  if(a==='eb-download'){window.location.href='/api/eb/attachment/'+id;return;}
+  if(a==='eb-delete'){
+    const b=state.ebBills.find(x=>x.id===id);
+    if(!b)return;
+    if(!confirm(`Delete EB bill ${b.billMonth} (${b.serviceNumber}) and attached file permanently?`))return;
+    try{
+      await api('/api/eb/bills/'+id,{method:'DELETE'});
+      toast('EB bill deleted');
+      await refresh();
+    }catch(e){
+      toast(e.message);
+    }
+    return;
+  }
+  if(a==='add-staff')return openForm('staff');
+  if(a==='add-asset')return openForm('asset');
+  if(a==='add-current')return openForm(state.view==='staff'?'staff':'asset');
+  if(a==='go-reports')return navigate('reports');
+  if(a==='edit')return openForm(state.view==='staff'?'staff':'asset',id);
+  if(a==='delete'){
+    const kind=state.view==='staff'?'staff':'assets';
+    const item=(kind==='staff'?state.staff:state.assets).find(x=>x.id===id);
+    if(!item)return;
+    if(!confirm(`Permanently delete "${item.name}"? ${kind==='staff'?'All assigned assets will become unassigned. Consider setting status to Relieved instead.':'This cannot be undone without a backup.'}`))return;
+    try{
+      await api(`/api/${kind}/${id}`,{method:'DELETE'});
+      toast('Record deleted');
+      await refresh();
+    }catch(e){
+      toast(e.message);
+    }
+    return;
+  }
+  if(a==='export')return download(state.view);
+  if(a.startsWith('export-'))return download(a.substring(7));
+  if(a==='export-all'){
+    Object.keys(types).filter(k=>k!=='staff').forEach((k,i)=>setTimeout(()=>download(k),i*450));
+    return toast('Downloading asset CSV files (your browser may ask permission).');
+  }
+  if(a==='backup'){window.location.href='/api/backup';return;}
+  if(a==='restore'){$('#restoreFile').click();return;}
+}
+
+$('#content').addEventListener('change',async e=>{
+  if(e.target.id!=='restoreFile')return;
+  const file=e.target.files[0];
+  if(!file)return;
+  try{
+    if(file.size>7_000_000)throw Error('Backup file exceeds 7 MB upload limit.');
+    const data=JSON.parse(await file.text());
+    if(!confirm('WARNING: This will REPLACE all staff, assets and EB bills. Download a fresh backup first. Continue?'))return;
+    await api('/api/restore',{method:'POST',body:JSON.stringify(data)});
+    toast('Backup restored successfully');
+    await refresh();
+  }catch(err){
+    toast(err.message);
+  }finally{
+    e.target.value='';
+  }
+});
+
+init();
+
+// Scroll lock sync for both Add/Edit modal and Read-only Detail modal
+(()=>{
+  const b1=document.getElementById('modalBackdrop');
+  const b2=document.getElementById('detailModalBackdrop');
+  const sync=()=>{
+    const open1=b1&&!b1.classList.contains('hidden');
+    const open2=b2&&!b2.classList.contains('hidden');
+    const isOpen=Boolean(open1||open2);
+    document.body.classList.toggle('modal-open',isOpen);
+    document.documentElement.classList.toggle('modal-open',isOpen);
+  };
+  if(b1)new MutationObserver(sync).observe(b1,{attributes:true,attributeFilter:['class']});
+  if(b2)new MutationObserver(sync).observe(b2,{attributes:true,attributeFilter:['class']});
+  sync();
 })();
